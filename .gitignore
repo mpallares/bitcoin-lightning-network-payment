@@ -1,0 +1,58 @@
+# Root .gitignore for Lightning Network Payment App
+
+# Node modules (both server and client)
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Lightning Network credentials (CRITICAL - NEVER COMMIT!)
+*.cert
+*.macaroon
+*.key
+
+# Polar data (if you have it in the project directory)
+.polar/
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Backup files
+*.bak
+*.backup
+*~
