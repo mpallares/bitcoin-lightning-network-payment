@@ -22,9 +22,31 @@ async function fetchApi<T>(
       ...options,
     });
 
-    const data = await response.json();
+    let data: ApiResponse<T>;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        error: `Invalid response from server (status ${response.status})`,
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `Request failed with status ${response.status}`,
+      };
+    }
+
     return data;
   } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return {
+        success: false,
+        error: 'Unable to connect to server. Is the backend running?',
+      };
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Network error',
@@ -37,6 +59,13 @@ export async function createInvoice(
   amount: number,
   description?: string
 ): Promise<ApiResponse<Invoice>> {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { success: false, error: 'Amount must be a positive integer' };
+  }
+  if (description !== undefined && typeof description !== 'string') {
+    return { success: false, error: 'Description must be a string' };
+  }
+
   return fetchApi<Invoice>('/api/invoice', {
     method: 'POST',
     body: JSON.stringify({ amount, description }),
@@ -46,12 +75,20 @@ export async function createInvoice(
 export async function getInvoice(
   paymentHash: string
 ): Promise<ApiResponse<Invoice>> {
-  return fetchApi<Invoice>(`/api/invoice/${paymentHash}`);
+  if (!paymentHash || typeof paymentHash !== 'string') {
+    return { success: false, error: 'Payment hash is required' };
+  }
+
+  return fetchApi<Invoice>(`/api/invoice/${encodeURIComponent(paymentHash)}`);
 }
 
 export async function decodeInvoice(
   paymentRequest: string
 ): Promise<ApiResponse<DecodedInvoice>> {
+  if (!paymentRequest || typeof paymentRequest !== 'string') {
+    return { success: false, error: 'Payment request is required' };
+  }
+
   return fetchApi<DecodedInvoice>('/api/invoice/decode', {
     method: 'POST',
     body: JSON.stringify({ payment_request: paymentRequest }),
@@ -62,6 +99,10 @@ export async function decodeInvoice(
 export async function payInvoice(
   paymentRequest: string
 ): Promise<ApiResponse<Payment>> {
+  if (!paymentRequest || typeof paymentRequest !== 'string') {
+    return { success: false, error: 'Payment request is required' };
+  }
+
   return fetchApi<Payment>('/api/payment', {
     method: 'POST',
     body: JSON.stringify({ payment_request: paymentRequest }),
@@ -71,14 +112,25 @@ export async function payInvoice(
 export async function getPayment(
   paymentHash: string
 ): Promise<ApiResponse<Payment>> {
-  return fetchApi<Payment>(`/api/payment/${paymentHash}`);
+  if (!paymentHash || typeof paymentHash !== 'string') {
+    return { success: false, error: 'Payment hash is required' };
+  }
+
+  return fetchApi<Payment>(`/api/payment/${encodeURIComponent(paymentHash)}`);
 }
 
 // Transaction APIs
-export async function getTransactions(): Promise<
+export async function getTransactions(
+  page: number = 1,
+  limit: number = 10
+): Promise<
   ApiResponse<{ transactions: Transaction[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>
 > {
-  return fetchApi('/api/transactions');
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  return fetchApi(`/api/transactions?${params}`);
 }
 
 // Balance API
