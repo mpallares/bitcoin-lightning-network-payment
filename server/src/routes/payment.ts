@@ -92,7 +92,7 @@ router.post(
         data: payment,
       });
     } catch (error: any) {
-      console.error('Error processing payment:', error);
+      req.log?.error({ err: error }, 'Error processing payment');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to process payment',
@@ -168,7 +168,7 @@ router.get(
         },
       });
     } catch (error: any) {
-      console.error('Error getting payment:', error);
+      req.log?.error({ err: error }, 'Error getting payment');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get payment',

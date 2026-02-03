@@ -10,6 +10,7 @@ import { db } from '../db/database.js';
 import { transactions } from '../db/schema.js';
 import { desc, eq, sql, and } from 'drizzle-orm';
 import { getNodeBalance, getNodeInfo } from '../services/lightning.js';
+import { logger } from '../lib/logger.js';
 
 const router = Router();
 
@@ -128,7 +129,7 @@ router.get(
         },
       });
     } catch (error: any) {
-      console.error('Error listing transactions:', error);
+      req.log?.error({ err: error }, 'Error listing transactions');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to list transactions',
@@ -171,7 +172,7 @@ router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
       nodeABalance = await getNodeBalance('node_a');
       nodeBBalance = await getNodeBalance('node_b');
     } catch (error) {
-      console.warn('Could not fetch live node balances:', error);
+      logger.warn({ error }, 'Could not fetch live node balances');
     }
 
     res.json({
@@ -189,7 +190,7 @@ router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error: any) {
-    console.error('Error getting balance:', error);
+    logger.error({ err: error }, 'Error getting balance');
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to get balance',
@@ -217,7 +218,7 @@ router.get('/nodes', async (_req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error: any) {
-    console.error('Error getting node info:', error);
+    logger.error({ err: error }, 'Error getting node info');
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to get node info',

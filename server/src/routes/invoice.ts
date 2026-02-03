@@ -74,7 +74,7 @@ router.post(
         data: invoice,
       });
     } catch (error: any) {
-      console.error('Error creating invoice:', error);
+      req.log?.error({ err: error }, 'Error creating invoice');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to create invoice',
@@ -152,7 +152,7 @@ router.get(
         },
       });
     } catch (error: any) {
-      console.error('Error getting invoice:', error);
+      req.log?.error({ err: error }, 'Error getting invoice');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get invoice',
@@ -191,7 +191,7 @@ router.post(
         data: decoded,
       });
     } catch (error: any) {
-      console.error('Error decoding invoice:', error);
+      req.log?.error({ err: error }, 'Error decoding invoice');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to decode invoice',

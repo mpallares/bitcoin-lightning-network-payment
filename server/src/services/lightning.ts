@@ -20,6 +20,7 @@ import {
   NodeInfo,
 } from '../types/lightning.js';
 import QRCode from 'qrcode';
+import { logger } from '../lib/logger.js';
 
 /**
  * Authenticated LND Object
@@ -311,12 +312,13 @@ export const testNodeConnection = async (
 ): Promise<boolean> => {
   try {
     const info = await getNodeInfo(node);
-    console.log(
-      `✅ Connected to ${node}: ${info.alias} (${info.identity_pubkey.slice(0, 16)}...)`
+    logger.info(
+      { node, alias: info.alias, pubkey: info.identity_pubkey.slice(0, 16) },
+      'Connected to Lightning node'
     );
     return true;
   } catch (error) {
-    console.error(`❌ Failed to connect to ${node}:`, error);
+    logger.error({ node, error }, 'Failed to connect to Lightning node');
     return false;
   }
 };
