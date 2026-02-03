@@ -3,13 +3,16 @@
  *
  * Express server that connects to LND nodes via ln-service
  * and provides REST API for creating invoices and making payments.
+ * Uses Socket.IO for real-time invoice status updates.
  */
 
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { testConnection, closeConnection } from './db/database.js';
-import { testNodeConnection } from './services/lightning.js';
+import { testNodeConnection, subscribeToInvoiceUpdates } from './services/lightning.js';
 import invoiceRoutes from './routes/invoice.js';
 import paymentRoutes from './routes/payment.js';
 import transactionRoutes from './routes/transactions.js';
@@ -18,7 +21,16 @@ import transactionRoutes from './routes/transactions.js';
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
+
+// Socket.IO setup with CORS
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  },
+});
 
 // Middleware
 app.use(cors({
@@ -64,6 +76,46 @@ app.use((_req, res) => {
 });
 
 /**
+ * Setup Socket.IO connections and LND invoice subscription
+ */
+function setupWebSocket() {
+  // Track connected clients
+  io.on('connection', (socket) => {
+    console.log(`🔌 Client connected: ${socket.id}`);
+
+    socket.on('disconnect', () => {
+      console.log(`🔌 Client disconnected: ${socket.id}`);
+    });
+  });
+
+  // Subscribe to LND invoice updates
+  try {
+    const invoiceSub = subscribeToInvoiceUpdates();
+
+    invoiceSub.on('invoice_updated', (invoice: any) => {
+      console.log(`⚡ Invoice updated: ${invoice.id} - ${invoice.is_confirmed ? 'PAID' : 'pending'}`);
+
+      // Emit to all connected clients
+      io.emit('invoice:updated', {
+        payment_hash: invoice.id,
+        status: invoice.is_confirmed ? 'succeeded' : invoice.is_canceled ? 'expired' : 'pending',
+        amount: invoice.tokens,
+        preimage: invoice.secret || null,
+        settled_at: invoice.confirmed_at || null,
+      });
+    });
+
+    invoiceSub.on('error', (err: any) => {
+      console.error('❌ Invoice subscription error:', err);
+    });
+
+    console.log('✅ Subscribed to LND invoice updates');
+  } catch (error) {
+    console.warn('⚠️  Could not subscribe to invoice updates:', error);
+  }
+}
+
+/**
  * Start Server
  */
 async function startServer() {
@@ -94,9 +146,13 @@ async function startServer() {
     console.warn('   Error:', error);
   }
 
-  // Start server
-  app.listen(PORT, () => {
+  // Setup WebSocket and LND subscription
+  setupWebSocket();
+
+  // Start HTTP server (Express + Socket.IO)
+  httpServer.listen(PORT, () => {
     console.log(`\n✅ Server running on http://localhost:${PORT}`);
+    console.log('✅ WebSocket ready for real-time updates');
     console.log('\n📚 API Endpoints:');
     console.log('   POST /api/invoice          - Create invoice');
     console.log('   GET  /api/invoice/:hash    - Get invoice status');
@@ -106,7 +162,9 @@ async function startServer() {
     console.log('   GET  /api/transactions     - List transactions');
     console.log('   GET  /api/balance          - Get balance');
     console.log('   GET  /api/nodes            - Get node info');
-    console.log('   GET  /api/health           - Health check\n');
+    console.log('   GET  /api/health           - Health check');
+    console.log('\n📡 WebSocket Events:');
+    console.log('   invoice:updated            - Real-time invoice status\n');
   });
 }
 
@@ -114,12 +172,14 @@ async function startServer() {
 process.on('SIGINT', async () => {
   console.log('\n\n🛑 Shutting down server...');
   await closeConnection();
+  io.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\n\n🛑 Shutting down server...');
   await closeConnection();
+  io.close();
   process.exit(0);
 });
 
