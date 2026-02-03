@@ -103,6 +103,25 @@ declare module 'ln-service' {
     version: string;
   }
 
+  interface SubscribeToInvoicesArgs {
+    lnd: any;
+  }
+
+  interface InvoiceSubscription {
+    on(event: 'invoice_updated', listener: (invoice: InvoiceUpdate) => void): this;
+    on(event: 'error', listener: (error: Error) => void): this;
+    removeAllListeners(): this;
+  }
+
+  interface InvoiceUpdate {
+    id: string;
+    is_confirmed: boolean;
+    is_canceled: boolean;
+    tokens: number;
+    secret: string | null;
+    confirmed_at: string | null;
+  }
+
   export function authenticatedLndGrpc(args: AuthenticatedLndGrpcArgs): AuthenticatedLnd;
   export function createInvoice(args: CreateInvoiceArgs): Promise<CreateInvoiceResult>;
   export function decodePaymentRequest(args: DecodePaymentRequestArgs): Promise<DecodePaymentRequestResult>;
@@ -112,4 +131,5 @@ declare module 'ln-service' {
   export function getChainBalance(args: GetChainBalanceArgs): Promise<GetChainBalanceResult>;
   export function getChannelBalance(args: GetChannelBalanceArgs): Promise<GetChannelBalanceResult>;
   export function getWalletInfo(args: GetWalletInfoArgs): Promise<GetWalletInfoResult>;
+  export function subscribeToInvoices(args: SubscribeToInvoicesArgs): InvoiceSubscription;
 }
