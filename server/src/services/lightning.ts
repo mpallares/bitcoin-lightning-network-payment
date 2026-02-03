@@ -320,3 +320,16 @@ export const testNodeConnection = async (
     return false;
   }
 };
+
+/**
+ * Subscribe to Invoice Updates on Node A (Alice)
+ *
+ * Returns an EventEmitter that emits 'invoice_updated' events
+ * when invoices are created, updated, or paid.
+ *
+ * @returns EventEmitter subscription
+ */
+export const subscribeToInvoiceUpdates = () => {
+  const { lnd } = getNodeALnd();
+  return lnService.subscribeToInvoices({ lnd });
+};
