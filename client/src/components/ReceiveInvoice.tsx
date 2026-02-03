@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useQueryClient } from '@tanstack/react-query';
-import { createInvoice, getInvoice } from '@/lib/api';
+import { createInvoice } from '@/lib/api';
 import { Invoice } from '@/lib/types';
+import { getSocket, InvoiceUpdateEvent } from '@/lib/socket';
 
 export default function ReceiveInvoice() {
   const queryClient = useQueryClient();
@@ -12,8 +14,39 @@ export default function ReceiveInvoice() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [checkingStatus, setCheckingStatus] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Listen for real-time invoice updates via WebSocket
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleInvoiceUpdate = (data: InvoiceUpdateEvent) => {
+      // Only update if it's for our current invoice
+      if (invoice && data.payment_hash === invoice.payment_hash) {
+        setInvoice((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: data.status,
+                preimage: data.preimage || prev.preimage,
+              }
+            : null,
+        );
+
+        // Refresh transactions and balance when paid
+        if (data.status === 'succeeded') {
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['balance'] });
+        }
+      }
+    };
+
+    socket.on('invoice:updated', handleInvoiceUpdate);
+
+    return () => {
+      socket.off('invoice:updated', handleInvoiceUpdate);
+    };
+  }, [invoice, queryClient]);
 
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,25 +73,6 @@ export default function ReceiveInvoice() {
     }
 
     setLoading(false);
-  };
-
-  const handleCheckStatus = async () => {
-    if (!invoice) return;
-
-    setCheckingStatus(true);
-    const result = await getInvoice(invoice.payment_hash);
-
-    if (result.success && result.data) {
-      const updatedInvoice = { ...invoice, ...result.data };
-      setInvoice(updatedInvoice);
-      // If status changed to succeeded, refresh transactions and balance
-      if (updatedInvoice.status === 'succeeded' && invoice.status !== 'succeeded') {
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-        queryClient.invalidateQueries({ queryKey: ['balance'] });
-      }
-    }
-
-    setCheckingStatus(false);
   };
 
   const copyToClipboard = (text: string) => {
@@ -137,10 +151,12 @@ export default function ReceiveInvoice() {
 
           {invoice.qr_code && (
             <div className='flex justify-center'>
-              <img
+              <Image
                 src={invoice.qr_code}
                 alt='Invoice QR Code'
-                className='w-48 h-48'
+                width={192}
+                height={192}
+                unoptimized
               />
             </div>
           )}
@@ -204,14 +220,6 @@ export default function ReceiveInvoice() {
               </p>
             </div>
           </div>
-
-          <button
-            onClick={handleCheckStatus}
-            disabled={checkingStatus}
-            className='w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50'
-          >
-            {checkingStatus ? 'Checking...' : 'Check Payment Status'}
-          </button>
         </div>
       )}
     </div>
