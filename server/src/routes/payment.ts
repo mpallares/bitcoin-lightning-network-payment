@@ -8,7 +8,7 @@ import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/database.js';
 import { transactions } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import {
   payInvoice,
   getPaymentStatus,
@@ -79,7 +79,12 @@ router.post(
             preimage: payment.preimage,
             updatedAt: new Date(),
           })
-          .where(eq(transactions.paymentHash, decoded.payment_hash));
+          .where(
+            and(
+              eq(transactions.paymentHash, decoded.payment_hash),
+              eq(transactions.transactionType, 'invoice')
+            )
+          );
       }
 
       res.status(201).json({
