@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { decodeInvoice, payInvoice } from '@/lib/api';
 import { DecodedInvoice, Payment } from '@/lib/types';
 
 export default function SendPayment() {
+  const queryClient = useQueryClient();
   const [invoiceString, setInvoiceString] = useState('');
   const [decodedInvoice, setDecodedInvoice] = useState<DecodedInvoice | null>(null);
   const [payment, setPayment] = useState<Payment | null>(null);
@@ -44,6 +46,9 @@ export default function SendPayment() {
 
     if (result.success && result.data) {
       setPayment(result.data);
+      // Invalidate transactions and balance cache after payment
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['balance'] });
     } else {
       setError(result.error || 'Payment failed');
     }
@@ -51,16 +56,16 @@ export default function SendPayment() {
     setLoading(false);
   };
 
-  const isExpired = decodedInvoice && new Date(decodedInvoice.expires_at) < new Date();
+  const isExpired = decodedInvoice ? new Date(decodedInvoice.expires_at) < new Date() : false;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Send Payment</h2>
-      <p className="text-gray-600">Pay a Lightning invoice from Node B (Bob)</p>
+      <h2 className="text-2xl font-bold text-gray-700">Send Payment</h2>
+      <p className="text-gray-700">Pay a Lightning invoice from Node B (Bob)</p>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Invoice String</label>
+          <label className="block text-sm font-semibold text-gray-900 mb-1">Invoice String</label>
           <textarea
             value={invoiceString}
             onChange={(e) => {
@@ -71,7 +76,7 @@ export default function SendPayment() {
             }}
             placeholder="lnbcrt..."
             rows={4}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm"
+            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm outline-none text-gray-500 border-gray-300"
           />
         </div>
 
@@ -92,32 +97,32 @@ export default function SendPayment() {
 
       {decodedInvoice && !payment && (
         <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-          <h3 className="text-lg font-semibold">Invoice Details</h3>
+          <h3 className="text-lg font-semibold text-gray-700">Invoice Details</h3>
 
           <div className="space-y-2">
             <div>
-              <label className="block text-sm text-gray-500">Amount</label>
-              <p className="font-mono text-xl">{decodedInvoice.amount} sats</p>
+              <label className="block text-sm font-medium text-gray-800">Amount</label>
+              <p className="font-mono text-xl text-gray-500">{decodedInvoice.amount} sats</p>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-500">Description</label>
-              <p>{decodedInvoice.description || 'No description'}</p>
+              <label className="block text-sm font-medium text-gray-800">Description</label>
+              <p className="text-gray-500">{decodedInvoice.description || 'No description'}</p>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-500">Payment Hash</label>
-              <p className="font-mono text-xs break-all">{decodedInvoice.payment_hash}</p>
+              <label className="block text-sm font-medium text-gray-800">Payment Hash</label>
+              <p className="font-mono text-xs break-all text-gray-500">{decodedInvoice.payment_hash}</p>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-500">Destination</label>
-              <p className="font-mono text-xs break-all">{decodedInvoice.destination}</p>
+              <label className="block text-sm font-medium text-gray-800">Destination</label>
+              <p className="font-mono text-xs break-all text-gray-500">{decodedInvoice.destination}</p>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-500">Expires At</label>
-              <p className={`text-sm ${isExpired ? 'text-red-600' : ''}`}>
+              <label className="block text-sm font-medium text-gray-800">Expires At</label>
+              <p className={`text-sm text-gray-500 ${isExpired ? 'text-red-600' : ''}`}>
                 {new Date(decodedInvoice.expires_at).toLocaleString()}
                 {isExpired && ' (EXPIRED)'}
               </p>
@@ -139,7 +144,7 @@ export default function SendPayment() {
           payment.status === 'succeeded' ? 'bg-green-50' : 'bg-red-50'
         }`}>
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Payment Result</h3>
+            <h3 className="text-lg font-semibold text-gray-800">Payment Result</h3>
             <span
               className={`px-3 py-1 rounded-full text-sm font-medium ${
                 payment.status === 'succeeded'
@@ -153,32 +158,32 @@ export default function SendPayment() {
 
           <div className="space-y-2">
             <div>
-              <label className="block text-sm text-gray-500">Amount Paid</label>
-              <p className="font-mono">{payment.amount} sats</p>
+              <label className="block text-sm font-medium text-gray-800">Amount Paid</label>
+              <p className="font-mono text-gray-500">{payment.amount} sats</p>
             </div>
 
             {payment.fee > 0 && (
               <div>
-                <label className="block text-sm text-gray-500">Routing Fee</label>
-                <p className="font-mono">{payment.fee} sats</p>
+                <label className="block text-sm font-medium text-gray-800">Routing Fee</label>
+                <p className="font-mono text-gray-500">{payment.fee} sats</p>
               </div>
             )}
 
             <div>
-              <label className="block text-sm text-gray-500">Payment Hash</label>
-              <p className="font-mono text-xs break-all">{payment.payment_hash}</p>
+              <label className="block text-sm font-medium text-gray-800">Payment Hash</label>
+              <p className="font-mono text-xs break-all text-gray-500">{payment.payment_hash}</p>
             </div>
 
             {payment.preimage && (
               <div>
-                <label className="block text-sm text-gray-500">Preimage (Proof of Payment)</label>
+                <label className="block text-sm font-medium text-gray-800">Preimage (Proof of Payment)</label>
                 <p className="font-mono text-xs break-all text-green-600">{payment.preimage}</p>
               </div>
             )}
 
             {payment.error && (
               <div>
-                <label className="block text-sm text-gray-500">Error</label>
+                <label className="block text-sm font-medium text-gray-800">Error</label>
                 <p className="text-red-600">{payment.error}</p>
               </div>
             )}
