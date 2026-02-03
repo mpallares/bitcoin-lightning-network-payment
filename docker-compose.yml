@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: lightning-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lightning_payments
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Server
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: lightning-server
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/lightning_payments
+      CORS_ORIGIN: http://localhost:3000
+      # Lightning node config - mount from host or set paths
+      LND_A_HOST: host.docker.internal:10001
+      LND_A_CERT_PATH: /lnd/alice/tls.cert
+      LND_A_MACAROON_PATH: /lnd/alice/data/chain/bitcoin/regtest/admin.macaroon
+      LND_B_HOST: host.docker.internal:10002
+      LND_B_CERT_PATH: /lnd/bob/tls.cert
+      LND_B_MACAROON_PATH: /lnd/bob/data/chain/bitcoin/regtest/admin.macaroon
+    volumes:
+      # Mount Polar's LND credentials (adjust path as needed)
+      - ~/.polar/networks/1/volumes/lnd/alice:/lnd/alice:ro
+      - ~/.polar/networks/1/volumes/lnd/bob:/lnd/bob:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Frontend Client
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: lightning-client
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
