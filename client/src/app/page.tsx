@@ -1,32 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import ReceiveInvoice from '@/components/ReceiveInvoice';
 import SendPayment from '@/components/SendPayment';
 import TransactionHistory from '@/components/TransactionHistory';
 import { getNodes } from '@/lib/api';
-import { NodeInfo } from '@/lib/types';
 
 type Tab = 'receive' | 'send' | 'history';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('receive');
-  const [nodes, setNodes] = useState<{ node_a: NodeInfo; node_b: NodeInfo } | null>(null);
-  const [connected, setConnected] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    const checkConnection = async () => {
+  const { data: nodes, isLoading, isError } = useQuery({
+    queryKey: ['nodes'],
+    queryFn: async () => {
       const result = await getNodes();
-      if (result.success && result.data) {
-        setNodes(result.data);
-        setConnected(true);
-      } else {
-        setConnected(false);
-      }
-    };
+      if (!result.success) throw new Error(result.error || 'Failed to fetch nodes');
+      return result.data;
+    },
+    retry: 2,
+  });
 
-    checkConnection();
-  }, []);
+  const connected = isLoading ? null : isError ? false : true;
 
   const tabs: { id: Tab; label: string; description: string }[] = [
     { id: 'receive', label: 'Receive', description: 'Generate invoice (Alice)' },
@@ -40,7 +36,7 @@ export default function Home() {
       <header className="bg-white shadow">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <h1 className="text-3xl font-bold text-gray-900">Lightning Network Payments</h1>
-          <p className="mt-1 text-gray-600">
+          <p className="mt-1 text-gray-700">
             Send and receive payments over the Lightning Network
           </p>
 
@@ -66,7 +62,7 @@ export default function Home() {
             </div>
 
             {nodes && (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-700">
                 Alice: {nodes.node_a.alias} | Bob: {nodes.node_b.alias}
               </div>
             )}
@@ -85,11 +81,11 @@ export default function Home() {
               className={`px-6 py-3 font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-700 hover:text-gray-700'
               }`}
             >
               <span>{tab.label}</span>
-              <span className="hidden sm:inline text-xs ml-2 text-gray-400">
+              <span className="hidden sm:inline text-xs ml-2 text-gray-600">
                 ({tab.description})
               </span>
             </button>
@@ -115,7 +111,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto py-6 text-center text-gray-500 text-sm">
+      <footer className="mt-auto py-6 text-center text-gray-700 text-sm">
         Lightning Network Payment Demo
       </footer>
     </div>
