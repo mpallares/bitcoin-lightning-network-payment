@@ -16,6 +16,8 @@ import { testNodeConnection, subscribeToInvoiceUpdates } from './services/lightn
 import invoiceRoutes from './routes/invoice.js';
 import paymentRoutes from './routes/payment.js';
 import transactionRoutes from './routes/transactions.js';
+import { logger } from './lib/logger.js';
+import { requestLogger } from './middleware/requestLogger.js';
 
 // Load environment variables
 dotenv.config();
@@ -38,12 +40,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
-
-// Request logging middleware
-app.use((req, _res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
-  next();
-});
+app.use(requestLogger);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
@@ -59,8 +56,8 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api', transactionRoutes);
 
 // Error handling middleware
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  req.log?.error({ err }, 'Unhandled error');
   res.status(500).json({
     success: false,
     error: 'Internal server error',
@@ -81,10 +78,10 @@ app.use((_req, res) => {
 function setupWebSocket() {
   // Track connected clients
   io.on('connection', (socket) => {
-    console.log(`🔌 Client connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, 'Client connected');
 
     socket.on('disconnect', () => {
-      console.log(`🔌 Client disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, 'Client disconnected');
     });
   });
 
@@ -93,7 +90,10 @@ function setupWebSocket() {
     const invoiceSub = subscribeToInvoiceUpdates();
 
     invoiceSub.on('invoice_updated', (invoice: any) => {
-      console.log(`⚡ Invoice updated: ${invoice.id} - ${invoice.is_confirmed ? 'PAID' : 'pending'}`);
+      logger.info(
+        { paymentHash: invoice.id, status: invoice.is_confirmed ? 'PAID' : 'pending' },
+        'Invoice updated'
+      );
 
       // Emit to all connected clients
       io.emit('invoice:updated', {
@@ -106,12 +106,12 @@ function setupWebSocket() {
     });
 
     invoiceSub.on('error', (err: any) => {
-      console.error('❌ Invoice subscription error:', err);
+      logger.error({ err }, 'Invoice subscription error');
     });
 
-    console.log('✅ Subscribed to LND invoice updates');
+    logger.info('Subscribed to LND invoice updates');
   } catch (error) {
-    console.warn('⚠️  Could not subscribe to invoice updates:', error);
+    logger.warn({ error }, 'Could not subscribe to invoice updates');
   }
 }
 
@@ -119,31 +119,28 @@ function setupWebSocket() {
  * Start Server
  */
 async function startServer() {
-  console.log('\n🚀 Starting Lightning Network Payment Server...\n');
+  logger.info('Starting Lightning Network Payment Server');
 
   // Test database connection
-  console.log('📦 Testing database connection...');
+  logger.info('Testing database connection...');
   const dbConnected = await testConnection();
   if (!dbConnected) {
-    console.error('❌ Cannot start server without database connection');
+    logger.fatal('Cannot start server without database connection');
     process.exit(1);
   }
 
   // Test Lightning node connections
-  console.log('\n⚡ Testing Lightning node connections...');
+  logger.info('Testing Lightning node connections...');
 
   try {
     const nodeAConnected = await testNodeConnection('node_a');
     const nodeBConnected = await testNodeConnection('node_b');
 
     if (!nodeAConnected || !nodeBConnected) {
-      console.warn('\n⚠️  Warning: Not all Lightning nodes are connected');
-      console.warn('   Make sure Polar is running with your network started\n');
+      logger.warn('Not all Lightning nodes connected - ensure Polar is running');
     }
   } catch (error) {
-    console.warn('\n⚠️  Warning: Could not connect to Lightning nodes');
-    console.warn('   Make sure Polar is running with your network started');
-    console.warn('   Error:', error);
+    logger.warn({ error }, 'Could not connect to Lightning nodes - ensure Polar is running');
   }
 
   // Setup WebSocket and LND subscription
@@ -151,33 +148,21 @@ async function startServer() {
 
   // Start HTTP server (Express + Socket.IO)
   httpServer.listen(PORT, () => {
-    console.log(`\n✅ Server running on http://localhost:${PORT}`);
-    console.log('✅ WebSocket ready for real-time updates');
-    console.log('\n📚 API Endpoints:');
-    console.log('   POST /api/invoice          - Create invoice');
-    console.log('   GET  /api/invoice/:hash    - Get invoice status');
-    console.log('   POST /api/invoice/decode   - Decode invoice');
-    console.log('   POST /api/payment          - Pay invoice');
-    console.log('   GET  /api/payment/:hash    - Get payment status');
-    console.log('   GET  /api/transactions     - List transactions');
-    console.log('   GET  /api/balance          - Get balance');
-    console.log('   GET  /api/nodes            - Get node info');
-    console.log('   GET  /api/health           - Health check');
-    console.log('\n📡 WebSocket Events:');
-    console.log('   invoice:updated            - Real-time invoice status\n');
+    logger.info({ port: PORT }, 'Server running');
+    logger.info('WebSocket ready for real-time updates');
   });
 }
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('\n\n🛑 Shutting down server...');
+  logger.info('Shutting down server (SIGINT)');
   await closeConnection();
   io.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.log('\n\n🛑 Shutting down server...');
+  logger.info('Shutting down server (SIGTERM)');
   await closeConnection();
   io.close();
   process.exit(0);
@@ -185,6 +170,6 @@ process.on('SIGTERM', async () => {
 
 // Start the server
 startServer().catch((error) => {
-  console.error('Failed to start server:', error);
+  logger.fatal({ error }, 'Failed to start server');
   process.exit(1);
 });
