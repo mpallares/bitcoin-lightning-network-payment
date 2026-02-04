@@ -33,22 +33,20 @@ export interface Payment {
 
 export interface Transaction {
   paymentHash: string;
-  transactionType: 'invoice' | 'payment';
+  type: 'invoice' | 'payment';
   amount: number;
   status: 'pending' | 'succeeded' | 'failed' | 'expired';
-  paymentRequest: string | null;
-  preimage: string | null;
   description: string | null;
-  nodeId: string;
-  expiresAt: string | null;
+  fee?: number | null;
   createdAt: string;
-  updatedAt: string;
+  settledAt: string | null;
 }
 
 export interface Balance {
   recorded: {
     total_received: number;
     total_sent: number;
+    total_fees: number;
     net_balance: number;
   };
   node_a: NodeBalance | null;
