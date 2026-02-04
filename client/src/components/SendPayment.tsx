@@ -15,6 +15,9 @@ export default function SendPayment() {
   const [loading, setLoading] = useState(false);
   const [decoding, setDecoding] = useState(false);
   const [error, setError] = useState('');
+  // Idempotency key to prevent duplicate payments
+  // Generated fresh for each new invoice, reused on retry
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 
   const handleDecode = async () => {
     if (!invoiceString.trim()) {
@@ -26,6 +29,8 @@ export default function SendPayment() {
     setError('');
     setDecodedInvoice(null);
     setPayment(null);
+    // Generate fresh idempotency key for this payment attempt
+    setIdempotencyKey(crypto.randomUUID());
 
     const result = await decodeInvoice(invoiceString.trim());
 
@@ -39,12 +44,13 @@ export default function SendPayment() {
   };
 
   const handlePay = async () => {
-    if (!invoiceString.trim()) return;
+    if (!invoiceString.trim() || !idempotencyKey) return;
 
     setLoading(true);
     setError('');
 
-    const result = await payInvoice(invoiceString.trim());
+    // Use stored idempotency key - same key on retry prevents duplicate payment
+    const result = await payInvoice(invoiceString.trim(), idempotencyKey);
 
     if (result.success && result.data) {
       setPayment(result.data);
@@ -53,6 +59,7 @@ export default function SendPayment() {
       queryClient.invalidateQueries({ queryKey: ['balance'] });
     } else {
       setError(result.error || 'Payment failed');
+      // Keep same idempotencyKey so retry uses the same key
     }
 
     setLoading(false);
@@ -79,6 +86,7 @@ export default function SendPayment() {
               setDecodedInvoice(null);
               setPayment(null);
               setError('');
+              setIdempotencyKey(null); // Clear key when invoice changes
             }}
             placeholder='lnbcrt...'
             rows={4}
