@@ -224,26 +224,37 @@ npm run dev
 
 ## API Endpoints
 
-### Invoices (Node A - Alice)
+### Create Invoice
+
+```bash
+POST /api/invoice
+Content-Type: application/json
+
+{ "amount": 1000, "description": "Coffee" }
+```
+
+Returns BOLT11 invoice string and payment hash.
+
+### Pay Invoice
+
+```bash
+POST /api/payment
+Content-Type: application/json
+X-Idempotency-Key: <uuid>
+
+{ "payment_request": "lnbcrt1000n..." }
+```
+
+Idempotency key prevents duplicate payments on retry.
+
+### Other Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/invoice` | Create new invoice |
 | GET | `/api/invoice/:payment_hash` | Get invoice status |
-| POST | `/api/invoice/decode` | Decode BOLT11 invoice |
-
-### Payments (Node B - Bob)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/payment` | Pay an invoice |
+| POST | `/api/invoice/decode` | Decode BOLT11 without paying |
 | GET | `/api/payment/:payment_hash` | Get payment status |
-
-### Transactions
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/transactions` | List all transactions |
+| GET | `/api/transactions` | List all transactions (paginated) |
 | GET | `/api/balance` | Get balance summary |
 | GET | `/api/nodes` | Get node info |
 
