@@ -96,17 +96,53 @@ export async function decodeInvoice(
 }
 
 // Payment APIs
+
+/**
+ * Pay a Lightning invoice with idempotency protection.
+ *
+ * @param paymentRequest - BOLT11 invoice string
+ * @param idempotencyKey - Unique key to prevent duplicate payments.
+ *                         Generate with crypto.randomUUID().
+ *                         Reuse the same key when retrying a failed payment.
+ */
 export async function payInvoice(
-  paymentRequest: string
+  paymentRequest: string,
+  idempotencyKey: string
 ): Promise<ApiResponse<Payment>> {
   if (!paymentRequest || typeof paymentRequest !== 'string') {
     return { success: false, error: 'Payment request is required' };
   }
+  if (!idempotencyKey || typeof idempotencyKey !== 'string') {
+    return { success: false, error: 'Idempotency key is required' };
+  }
 
-  return fetchApi<Payment>('/api/payment', {
+  const response = await fetch(`${API_URL}/api/payment`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': idempotencyKey,
+    },
     body: JSON.stringify({ payment_request: paymentRequest }),
   });
+
+  let data: ApiResponse<Payment>;
+  try {
+    data = await response.json();
+  } catch {
+    return {
+      success: false,
+      error: `Invalid response from server (status ${response.status})`,
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      success: false,
+      error: data.error || `Request failed with status ${response.status}`,
+    };
+  }
+
+  return data;
 }
 
 export async function getPayment(
