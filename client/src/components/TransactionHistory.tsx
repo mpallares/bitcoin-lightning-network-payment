@@ -128,20 +128,20 @@ export default function TransactionHistory() {
               </thead>
               <tbody>
                 {transactions.map((tx) => (
-                  <tr key={`${tx.paymentHash}-${tx.transactionType}`} className="border-b hover:bg-gray-50">
+                  <tr key={`${tx.paymentHash}-${tx.type}`} className="border-b hover:bg-gray-50">
                     <td className="py-3 px-2">
                       <span
                         className={`px-2 py-1 rounded text-sm ${
-                          tx.transactionType === 'invoice'
+                          tx.type === 'invoice'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-orange-100 text-orange-800'
                         }`}
                       >
-                        {tx.transactionType === 'invoice' ? 'Received' : 'Sent'}
+                        {tx.type === 'invoice' ? 'Received' : 'Sent'}
                       </span>
                     </td>
                     <td className="py-3 px-2 font-mono text-gray-700">
-                      {tx.transactionType === 'invoice' ? '+' : '-'}
+                      {tx.type === 'invoice' ? '+' : '-'}
                       {tx.amount.toLocaleString()} sats
                     </td>
                     <td className="py-3 px-2">
