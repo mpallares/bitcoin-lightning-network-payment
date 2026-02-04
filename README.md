@@ -150,7 +150,7 @@ bitcoin-lightning-network-payment/
 │   └── package.json
 │
 ├── docker-compose.yml         # Docker setup
-├── DOCKER.md                  # Docker instructions
+├── docker-setup.md                  # Docker instructions
 └── README.md
 ```
 
