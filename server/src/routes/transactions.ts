@@ -7,8 +7,8 @@
 import { Router, Request, Response } from 'express';
 import { query, validationResult } from 'express-validator';
 import { db } from '../db/database.js';
-import { transactions } from '../db/schema.js';
-import { desc, eq, sql, and } from 'drizzle-orm';
+import { invoices, payments } from '../db/schema.js';
+import { desc, eq, sql } from 'drizzle-orm';
 import { getNodeBalance, getNodeInfo } from '../services/lightning.js';
 import { logger } from '../lib/logger.js';
 
@@ -17,14 +17,7 @@ const router = Router();
 /**
  * GET /api/transactions
  *
- * List all transactions with optional filtering and pagination
- *
- * Query params:
- * - type: 'invoice' | 'payment' (optional)
- * - status: 'pending' | 'succeeded' | 'failed' | 'expired' (optional)
- * - node: 'node_a' | 'node_b' (optional)
- * - page: number (default 1)
- * - limit: number (default 20, max 100)
+ * List all transactions (invoices and payments combined)
  */
 router.get(
   '/transactions',
@@ -33,14 +26,6 @@ router.get(
       .optional()
       .isIn(['invoice', 'payment'])
       .withMessage('Type must be "invoice" or "payment"'),
-    query('status')
-      .optional()
-      .isIn(['pending', 'succeeded', 'failed', 'expired'])
-      .withMessage('Invalid status'),
-    query('node')
-      .optional()
-      .isIn(['node_a', 'node_b'])
-      .withMessage('Node must be "node_a" or "node_b"'),
     query('page')
       .optional()
       .isInt({ min: 1 })
@@ -60,16 +45,8 @@ router.get(
         return;
       }
 
-      const {
-        type,
-        status,
-        node,
-        page = 1,
-        limit = 20,
-      } = req.query as {
+      const { type, page = 1, limit = 20 } = req.query as {
         type?: 'invoice' | 'payment';
-        status?: string;
-        node?: string;
         page?: number;
         limit?: number;
       };
@@ -78,43 +55,68 @@ router.get(
       const limitNum = Number(limit);
       const offset = (pageNum - 1) * limitNum;
 
-      // Apply filters using where conditions
-      const conditions = [];
+      // Query based on type filter
+      let results: any[] = [];
+      let total = 0;
 
-      if (type) {
-        conditions.push(eq(transactions.transactionType, type));
-      }
-      if (status) {
-        conditions.push(eq(transactions.status, status as any));
-      }
-      if (node) {
-        conditions.push(eq(transactions.nodeId, node));
+      if (!type || type === 'invoice') {
+        const invoiceResults = await db
+          .select({
+            paymentHash: invoices.paymentHash,
+            type: sql<string>`'invoice'`,
+            amount: invoices.amount,
+            status: invoices.status,
+            description: invoices.description,
+            createdAt: invoices.createdAt,
+            settledAt: invoices.settledAt,
+          })
+          .from(invoices)
+          .orderBy(desc(invoices.createdAt))
+          .limit(type === 'invoice' ? limitNum : 1000)
+          .offset(type === 'invoice' ? offset : 0);
+
+        results.push(...invoiceResults.map(r => ({ ...r, type: 'invoice' })));
       }
 
-      // Execute query
-      let results;
-      if (conditions.length > 0) {
-        results = await db
-          .select()
-          .from(transactions)
-          .where(conditions.length === 1 ? conditions[0] : and(...conditions))
-          .orderBy(desc(transactions.createdAt))
-          .limit(limitNum)
-          .offset(offset);
+      if (!type || type === 'payment') {
+        const paymentResults = await db
+          .select({
+            paymentHash: payments.paymentHash,
+            type: sql<string>`'payment'`,
+            amount: payments.amount,
+            status: payments.status,
+            description: payments.description,
+            fee: payments.fee,
+            createdAt: payments.createdAt,
+            settledAt: payments.settledAt,
+          })
+          .from(payments)
+          .orderBy(desc(payments.createdAt))
+          .limit(type === 'payment' ? limitNum : 1000)
+          .offset(type === 'payment' ? offset : 0);
+
+        results.push(...paymentResults.map(r => ({ ...r, type: 'payment' })));
+      }
+
+      // Sort combined results by date
+      results.sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      // Get totals
+      if (!type) {
+        const invoiceCount = await db.select({ count: sql<number>`count(*)` }).from(invoices);
+        const paymentCount = await db.select({ count: sql<number>`count(*)` }).from(payments);
+        total = Number(invoiceCount[0].count) + Number(paymentCount[0].count);
+        // Apply pagination to combined results
+        results = results.slice(offset, offset + limitNum);
+      } else if (type === 'invoice') {
+        const countResult = await db.select({ count: sql<number>`count(*)` }).from(invoices);
+        total = Number(countResult[0].count);
       } else {
-        results = await db
-          .select()
-          .from(transactions)
-          .orderBy(desc(transactions.createdAt))
-          .limit(limitNum)
-          .offset(offset);
+        const countResult = await db.select({ count: sql<number>`count(*)` }).from(payments);
+        total = Number(countResult[0].count);
       }
-
-      // Get total count
-      const countResult = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(transactions);
-      const total = Number(countResult[0].count);
 
       res.json({
         success: true,
@@ -141,30 +143,31 @@ router.get(
 /**
  * GET /api/balance
  *
- * Get balance information from recorded transactions
- * Shows: total received (invoices) - total sent (payments)
+ * Get balance information
  */
 router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Get total received (succeeded invoices)
     const receivedResult = await db
       .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
-      .from(transactions)
-      .where(
-        sql`${transactions.transactionType} = 'invoice' AND ${transactions.status} = 'succeeded'`
-      );
+      .from(invoices)
+      .where(eq(invoices.status, 'succeeded'));
 
     // Get total sent (succeeded payments)
     const sentResult = await db
       .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
-      .from(transactions)
-      .where(
-        sql`${transactions.transactionType} = 'payment' AND ${transactions.status} = 'succeeded'`
-      );
+      .from(payments)
+      .where(eq(payments.status, 'succeeded'));
+
+    // Get total fees paid
+    const feesResult = await db
+      .select({ total: sql<number>`COALESCE(SUM(fee), 0)` })
+      .from(payments)
+      .where(eq(payments.status, 'succeeded'));
 
     const totalReceived = Number(receivedResult[0].total);
     const totalSent = Number(sentResult[0].total);
-    const netBalance = totalReceived - totalSent;
+    const totalFees = Number(feesResult[0].total);
 
     // Also get live balances from nodes
     let nodeABalance, nodeBBalance;
@@ -178,13 +181,12 @@ router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
     res.json({
       success: true,
       data: {
-        // From database records
         recorded: {
           total_received: totalReceived,
           total_sent: totalSent,
-          net_balance: netBalance,
+          total_fees: totalFees,
+          net_balance: totalReceived - totalSent - totalFees,
         },
-        // Live from nodes (if available)
         node_a: nodeABalance || null,
         node_b: nodeBBalance || null,
       },

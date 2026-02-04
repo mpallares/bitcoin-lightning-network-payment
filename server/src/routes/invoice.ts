@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { db } from '../db/database.js';
-import { transactions } from '../db/schema.js';
+import { invoices } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import {
   createInvoice,
@@ -21,11 +21,6 @@ const router = Router();
  * POST /api/invoice
  *
  * Create a new Lightning invoice on Node A
- *
- * Body:
- * - amount: number (satoshis, required)
- * - description: string (optional)
- * - expiry: number (seconds, optional, default 3600)
  */
 router.post(
   '/',
@@ -45,7 +40,6 @@ router.post(
   ],
   async (req: Request, res: Response): Promise<void> => {
     try {
-      // Validate input
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({ errors: errors.array() });
@@ -57,15 +51,13 @@ router.post(
       // Create invoice on LND
       const invoice = await createInvoice({ amount, description, expiry });
 
-      // Save to database
-      await db.insert(transactions).values({
+      // Save to invoices table
+      await db.insert(invoices).values({
         paymentHash: invoice.payment_hash,
-        transactionType: 'invoice',
+        paymentRequest: invoice.payment_request,
         amount: amount,
         status: 'pending',
-        paymentRequest: invoice.payment_request,
         description: description || null,
-        nodeId: 'node_a',
         expiresAt: invoice.expires_at,
       });
 
@@ -109,8 +101,8 @@ router.get(
       // Get from database
       const dbResult = await db
         .select()
-        .from(transactions)
-        .where(eq(transactions.paymentHash, payment_hash));
+        .from(invoices)
+        .where(eq(invoices.paymentHash, payment_hash));
 
       if (dbResult.length === 0) {
         res.status(404).json({
@@ -127,14 +119,16 @@ router.get(
 
       // Update database if status changed
       if (dbInvoice.status !== lndStatus.status) {
+        const now = new Date();
         await db
-          .update(transactions)
+          .update(invoices)
           .set({
             status: lndStatus.status,
             preimage: lndStatus.preimage,
-            updatedAt: new Date(),
+            settledAt: lndStatus.status === 'succeeded' ? now : null,
+            updatedAt: now,
           })
-          .where(eq(transactions.paymentHash, payment_hash));
+          .where(eq(invoices.paymentHash, payment_hash));
       }
 
       res.json({
@@ -147,6 +141,7 @@ router.get(
           status: lndStatus.status,
           settled: lndStatus.settled,
           preimage: lndStatus.preimage,
+          settled_at: dbInvoice.settledAt,
           expires_at: dbInvoice.expiresAt,
           created_at: dbInvoice.createdAt,
         },
