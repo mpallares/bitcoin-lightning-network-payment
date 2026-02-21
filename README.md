@@ -31,7 +31,7 @@ A full-stack application for sending and receiving Bitcoin payments over the Lig
 │  └──────────────────────────┬──────────────────────────────────┘    │
 │                             │                                        │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                    PostgreSQL (Drizzle ORM)                  │    │
+│  │                    PostgreSQL (Prisma ORM)                   │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -88,7 +88,7 @@ A full-stack application for sending and receiving Bitcoin payments over the Lig
 ### Server
 - **Runtime**: Node.js + TypeScript
 - **Framework**: Express.js
-- **Database**: PostgreSQL + Drizzle ORM
+- **Database**: PostgreSQL + Prisma ORM
 - **Lightning**: ln-service (LND wrapper)
 - **Validation**: express-validator
 - **Logging**: pino (structured JSON logs with request tracing)
@@ -129,12 +129,13 @@ bitcoin-lightning-network-payment/
 │   └── package.json
 │
 ├── server/                    # Express backend
+│   ├── prisma/
+│   │   └── schema.prisma     # Database schema
 │   ├── src/
 │   │   ├── __tests__/        # Test files
 │   │   │   └── api.test.ts
 │   │   ├── db/
-│   │   │   ├── database.ts   # Drizzle connection
-│   │   │   └── schema.ts     # Database schema
+│   │   │   └── database.ts   # Prisma connection
 │   │   ├── lib/
 │   │   │   └── logger.ts     # Pino logger
 │   │   ├── middleware/

@@ -1,30 +1,14 @@
 /**
- * Database Connection with Drizzle ORM
+ * Database Connection with Prisma
  */
 
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import * as schema from './schema.js';
-import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
 
-dotenv.config();
-
-const connectionString =
-  process.env.DATABASE_URL ||
-  `postgresql://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'lightning_payments'}`;
-
-const client = postgres(connectionString, {
-  max: 10,
-  idle_timeout: 30,
-  connect_timeout: 2,
-  onnotice: () => {},
-});
-
-export const db = drizzle(client, { schema });
+export const prisma = new PrismaClient();
 
 export const testConnection = async (): Promise<boolean> => {
   try {
-    await client`SELECT NOW()`;
+    await prisma.$queryRaw`SELECT 1`;
     console.log('✅ Database connection successful');
     return true;
   } catch (error) {
@@ -35,12 +19,11 @@ export const testConnection = async (): Promise<boolean> => {
 
 export const closeConnection = async (): Promise<void> => {
   try {
-    await client.end();
+    await prisma.$disconnect();
     console.log('✅ Database connections closed');
   } catch (error) {
     console.error('❌ Error closing database connections:', error);
   }
 };
 
-export { client };
-export default db;
+export default prisma;

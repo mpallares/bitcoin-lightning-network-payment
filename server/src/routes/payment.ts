@@ -6,9 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { body, param, header, validationResult } from 'express-validator';
-import { db } from '../db/database.js';
-import { payments, invoices } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { prisma } from '../db/database.js';
 import {
   payInvoice,
   getPaymentStatus,
@@ -48,23 +46,22 @@ router.post(
 
       // Check for existing payment with same idempotency key
       if (idempotencyKey) {
-        const existingPayment = await db
-          .select()
-          .from(payments)
-          .where(eq(payments.idempotencyKey, idempotencyKey));
+        const existingPayment = await prisma.payment.findFirst({
+          where: { idempotencyKey },
+        });
 
-        if (existingPayment.length > 0) {
+        if (existingPayment) {
           req.log?.info({ idempotencyKey }, 'Returning cached payment (idempotency)');
           res.status(200).json({
             success: true,
             data: {
-              payment_hash: existingPayment[0].paymentHash,
-              status: existingPayment[0].status,
-              preimage: existingPayment[0].preimage,
-              amount: existingPayment[0].amount,
-              fee: existingPayment[0].fee,
-              payment_request: existingPayment[0].paymentRequest,
-              created_at: existingPayment[0].createdAt,
+              payment_hash: existingPayment.paymentHash,
+              status: existingPayment.status,
+              preimage: existingPayment.preimage,
+              amount: Number(existingPayment.amount),
+              fee: Number(existingPayment.fee),
+              payment_request: existingPayment.paymentRequest,
+              created_at: existingPayment.createdAt,
               cached: true,
             },
           });
@@ -92,32 +89,34 @@ router.post(
       const paymentStatus = payment.status === 'expired' ? 'failed' : payment.status;
 
       // Save to payments table
-      await db.insert(payments).values({
-        paymentHash: decoded.payment_hash,
-        paymentRequest: payment_request,
-        amount: decoded.amount,
-        fee: payment.fee || 0,
-        status: paymentStatus as 'pending' | 'succeeded' | 'failed',
-        description: decoded.description || null,
-        preimage: payment.preimage,
-        destination: decoded.destination,
-        errorMessage: payment.error || null,
-        retryCount: 0,
-        idempotencyKey: idempotencyKey || null,
-        settledAt: payment.status === 'succeeded' ? now : null,
+      await prisma.payment.create({
+        data: {
+          paymentHash: decoded.payment_hash,
+          paymentRequest: payment_request,
+          amount: decoded.amount,
+          fee: payment.fee || 0,
+          status: paymentStatus as 'pending' | 'succeeded' | 'failed',
+          description: decoded.description || null,
+          preimage: payment.preimage,
+          destination: decoded.destination,
+          errorMessage: payment.error || null,
+          retryCount: 0,
+          idempotencyKey: idempotencyKey || null,
+          settledAt: payment.status === 'succeeded' ? now : null,
+        },
       });
 
       // If payment succeeded, update the corresponding invoice (if it exists in our db)
       if (payment.status === 'succeeded') {
-        await db
-          .update(invoices)
-          .set({
+        await prisma.invoice.updateMany({
+          where: { paymentHash: decoded.payment_hash },
+          data: {
             status: 'succeeded',
             preimage: payment.preimage,
             settledAt: now,
             updatedAt: now,
-          })
-          .where(eq(invoices.paymentHash, decoded.payment_hash));
+          },
+        });
       }
 
       res.status(201).json({
@@ -166,12 +165,11 @@ router.get(
       const { payment_hash } = req.params;
 
       // Get from database
-      const dbResult = await db
-        .select()
-        .from(payments)
-        .where(eq(payments.paymentHash, payment_hash));
+      const dbPayment = await prisma.payment.findUnique({
+        where: { paymentHash: payment_hash },
+      });
 
-      if (dbResult.length === 0) {
+      if (!dbPayment) {
         res.status(404).json({
           success: false,
           error: 'Payment not found',
@@ -179,23 +177,21 @@ router.get(
         return;
       }
 
-      const dbPayment = dbResult[0];
-
       // Get current status from LND
       const lndStatus = await getPaymentStatus(payment_hash);
 
       // Update database if status changed
       if (dbPayment.status !== lndStatus.status) {
         const now = new Date();
-        await db
-          .update(payments)
-          .set({
+        await prisma.payment.update({
+          where: { paymentHash: payment_hash },
+          data: {
             status: lndStatus.status,
             preimage: lndStatus.preimage,
             settledAt: lndStatus.status === 'succeeded' ? now : null,
             updatedAt: now,
-          })
-          .where(eq(payments.paymentHash, payment_hash));
+          },
+        });
       }
 
       res.json({
@@ -203,14 +199,14 @@ router.get(
         data: {
           payment_hash: dbPayment.paymentHash,
           payment_request: dbPayment.paymentRequest,
-          amount: dbPayment.amount,
-          fee: dbPayment.fee,
+          amount: Number(dbPayment.amount),
+          fee: Number(dbPayment.fee),
           description: dbPayment.description,
           status: lndStatus.status,
           preimage: lndStatus.preimage,
           destination: dbPayment.destination,
           error_message: dbPayment.errorMessage,
-          retry_count: dbPayment.retryCount,
+          retry_count: Number(dbPayment.retryCount),
           settled_at: dbPayment.settledAt,
           created_at: dbPayment.createdAt,
         },

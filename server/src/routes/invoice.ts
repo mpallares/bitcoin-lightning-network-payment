@@ -6,9 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import { db } from '../db/database.js';
-import { invoices } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { prisma } from '../db/database.js';
 import {
   createInvoice,
   getInvoiceStatus,
@@ -52,13 +50,15 @@ router.post(
       const invoice = await createInvoice({ amount, description, expiry });
 
       // Save to invoices table
-      await db.insert(invoices).values({
-        paymentHash: invoice.payment_hash,
-        paymentRequest: invoice.payment_request,
-        amount: amount,
-        status: 'pending',
-        description: description || null,
-        expiresAt: invoice.expires_at,
+      await prisma.invoice.create({
+        data: {
+          paymentHash: invoice.payment_hash,
+          paymentRequest: invoice.payment_request,
+          amount: amount,
+          status: 'pending',
+          description: description || null,
+          expiresAt: invoice.expires_at,
+        },
       });
 
       res.status(201).json({
@@ -99,12 +99,11 @@ router.get(
       const { payment_hash } = req.params;
 
       // Get from database
-      const dbResult = await db
-        .select()
-        .from(invoices)
-        .where(eq(invoices.paymentHash, payment_hash));
+      const dbInvoice = await prisma.invoice.findUnique({
+        where: { paymentHash: payment_hash },
+      });
 
-      if (dbResult.length === 0) {
+      if (!dbInvoice) {
         res.status(404).json({
           success: false,
           error: 'Invoice not found',
@@ -112,23 +111,21 @@ router.get(
         return;
       }
 
-      const dbInvoice = dbResult[0];
-
       // Get current status from LND
       const lndStatus = await getInvoiceStatus(payment_hash);
 
       // Update database if status changed
       if (dbInvoice.status !== lndStatus.status) {
         const now = new Date();
-        await db
-          .update(invoices)
-          .set({
+        await prisma.invoice.update({
+          where: { paymentHash: payment_hash },
+          data: {
             status: lndStatus.status,
             preimage: lndStatus.preimage,
             settledAt: lndStatus.status === 'succeeded' ? now : null,
             updatedAt: now,
-          })
-          .where(eq(invoices.paymentHash, payment_hash));
+          },
+        });
       }
 
       res.json({
@@ -136,7 +133,7 @@ router.get(
         data: {
           payment_hash: dbInvoice.paymentHash,
           payment_request: dbInvoice.paymentRequest,
-          amount: dbInvoice.amount,
+          amount: Number(dbInvoice.amount),
           description: dbInvoice.description,
           status: lndStatus.status,
           settled: lndStatus.settled,

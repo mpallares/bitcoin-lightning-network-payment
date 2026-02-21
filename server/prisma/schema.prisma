@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InvoiceStatus {
+  pending   @map("pending")
+  succeeded @map("succeeded")
+  expired   @map("expired")
+
+  @@map("invoice_status")
+}
+
+enum PaymentStatus {
+  pending   @map("pending")
+  succeeded @map("succeeded")
+  failed    @map("failed")
+
+  @@map("payment_status")
+}
+
+model Invoice {
+  paymentHash    String        @id @map("payment_hash") @db.VarChar(64)
+  paymentRequest String        @map("payment_request") @db.Text
+  amount         BigInt        @db.BigInt
+  status         InvoiceStatus @default(pending)
+  description    String?       @db.Text
+  preimage       String?       @db.VarChar(64)
+  expiresAt      DateTime      @map("expires_at") @db.Timestamptz
+  settledAt      DateTime?     @map("settled_at") @db.Timestamptz
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([status], map: "idx_invoices_status")
+  @@index([createdAt], map: "idx_invoices_created")
+  @@map("invoices")
+}
+
+model Payment {
+  paymentHash    String        @id @map("payment_hash") @db.VarChar(64)
+  paymentRequest String        @map("payment_request") @db.Text
+  amount         BigInt        @db.BigInt
+  fee            BigInt?       @default(0) @db.BigInt
+  status         PaymentStatus @default(pending)
+  description    String?       @db.Text
+  preimage       String?       @db.VarChar(64)
+  destination    String?       @db.VarChar(66)
+  errorMessage   String?       @map("error_message") @db.Text
+  retryCount     BigInt?       @default(0) @map("retry_count") @db.BigInt
+  idempotencyKey String?       @map("idempotency_key") @db.VarChar(64)
+  settledAt      DateTime?     @map("settled_at") @db.Timestamptz
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([idempotencyKey], map: "idx_payments_idempotency")
+  @@index([status], map: "idx_payments_status")
+  @@index([createdAt], map: "idx_payments_created")
+  @@map("payments")
+}

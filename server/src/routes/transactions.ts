@@ -6,9 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { query, validationResult } from 'express-validator';
-import { db } from '../db/database.js';
-import { invoices, payments } from '../db/schema.js';
-import { desc, eq, sql } from 'drizzle-orm';
+import { prisma } from '../db/database.js';
 import { getNodeBalance, getNodeInfo } from '../services/lightning.js';
 import { logger } from '../lib/logger.js';
 
@@ -60,42 +58,57 @@ router.get(
       let total = 0;
 
       if (!type || type === 'invoice') {
-        const invoiceResults = await db
-          .select({
-            paymentHash: invoices.paymentHash,
-            type: sql<string>`'invoice'`,
-            amount: invoices.amount,
-            status: invoices.status,
-            description: invoices.description,
-            createdAt: invoices.createdAt,
-            settledAt: invoices.settledAt,
-          })
-          .from(invoices)
-          .orderBy(desc(invoices.createdAt))
-          .limit(type === 'invoice' ? limitNum : 1000)
-          .offset(type === 'invoice' ? offset : 0);
+        const invoiceResults = await prisma.invoice.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: type === 'invoice' ? limitNum : 1000,
+          skip: type === 'invoice' ? offset : 0,
+          select: {
+            paymentHash: true,
+            amount: true,
+            status: true,
+            description: true,
+            createdAt: true,
+            settledAt: true,
+          },
+        });
 
-        results.push(...invoiceResults.map(r => ({ ...r, type: 'invoice' })));
+        results.push(...invoiceResults.map(r => ({
+          paymentHash: r.paymentHash,
+          type: 'invoice' as const,
+          amount: Number(r.amount),
+          status: r.status,
+          description: r.description,
+          createdAt: r.createdAt,
+          settledAt: r.settledAt,
+        })));
       }
 
       if (!type || type === 'payment') {
-        const paymentResults = await db
-          .select({
-            paymentHash: payments.paymentHash,
-            type: sql<string>`'payment'`,
-            amount: payments.amount,
-            status: payments.status,
-            description: payments.description,
-            fee: payments.fee,
-            createdAt: payments.createdAt,
-            settledAt: payments.settledAt,
-          })
-          .from(payments)
-          .orderBy(desc(payments.createdAt))
-          .limit(type === 'payment' ? limitNum : 1000)
-          .offset(type === 'payment' ? offset : 0);
+        const paymentResults = await prisma.payment.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: type === 'payment' ? limitNum : 1000,
+          skip: type === 'payment' ? offset : 0,
+          select: {
+            paymentHash: true,
+            amount: true,
+            status: true,
+            description: true,
+            fee: true,
+            createdAt: true,
+            settledAt: true,
+          },
+        });
 
-        results.push(...paymentResults.map(r => ({ ...r, type: 'payment' })));
+        results.push(...paymentResults.map(r => ({
+          paymentHash: r.paymentHash,
+          type: 'payment' as const,
+          amount: Number(r.amount),
+          status: r.status,
+          description: r.description,
+          fee: Number(r.fee),
+          createdAt: r.createdAt,
+          settledAt: r.settledAt,
+        })));
       }
 
       // Sort combined results by date
@@ -105,17 +118,17 @@ router.get(
 
       // Get totals
       if (!type) {
-        const invoiceCount = await db.select({ count: sql<number>`count(*)` }).from(invoices);
-        const paymentCount = await db.select({ count: sql<number>`count(*)` }).from(payments);
-        total = Number(invoiceCount[0].count) + Number(paymentCount[0].count);
+        const [invoiceCount, paymentCount] = await Promise.all([
+          prisma.invoice.count(),
+          prisma.payment.count(),
+        ]);
+        total = invoiceCount + paymentCount;
         // Apply pagination to combined results
         results = results.slice(offset, offset + limitNum);
       } else if (type === 'invoice') {
-        const countResult = await db.select({ count: sql<number>`count(*)` }).from(invoices);
-        total = Number(countResult[0].count);
+        total = await prisma.invoice.count();
       } else {
-        const countResult = await db.select({ count: sql<number>`count(*)` }).from(payments);
-        total = Number(countResult[0].count);
+        total = await prisma.payment.count();
       }
 
       res.json({
@@ -148,26 +161,26 @@ router.get(
 router.get('/balance', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Get total received (succeeded invoices)
-    const receivedResult = await db
-      .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
-      .from(invoices)
-      .where(eq(invoices.status, 'succeeded'));
+    const receivedResult = await prisma.invoice.aggregate({
+      _sum: { amount: true },
+      where: { status: 'succeeded' },
+    });
 
     // Get total sent (succeeded payments)
-    const sentResult = await db
-      .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
-      .from(payments)
-      .where(eq(payments.status, 'succeeded'));
+    const sentResult = await prisma.payment.aggregate({
+      _sum: { amount: true },
+      where: { status: 'succeeded' },
+    });
 
     // Get total fees paid
-    const feesResult = await db
-      .select({ total: sql<number>`COALESCE(SUM(fee), 0)` })
-      .from(payments)
-      .where(eq(payments.status, 'succeeded'));
+    const feesResult = await prisma.payment.aggregate({
+      _sum: { fee: true },
+      where: { status: 'succeeded' },
+    });
 
-    const totalReceived = Number(receivedResult[0].total);
-    const totalSent = Number(sentResult[0].total);
-    const totalFees = Number(feesResult[0].total);
+    const totalReceived = Number(receivedResult._sum.amount ?? 0);
+    const totalSent = Number(sentResult._sum.amount ?? 0);
+    const totalFees = Number(feesResult._sum.fee ?? 0);
 
     // Also get live balances from nodes
     let nodeABalance, nodeBBalance;
