@@ -130,6 +130,7 @@ bitcoin-lightning-network-payment/
 │
 ├── server/                    # Express backend
 │   ├── prisma/
+│   │   ├── migrations/       # Prisma migration files
 │   │   └── schema.prisma     # Database schema
 │   ├── src/
 │   │   ├── __tests__/        # Test files
@@ -196,8 +197,8 @@ cp .env.example .env
 # - LND_B_* = Bob's credentials (sender)
 # Find credentials in ~/.polar/networks/1/volumes/lnd/
 
-# Push database schema
-npm run db:push
+# Run database migrations
+npx prisma migrate dev
 
 # Start server
 npm run dev
@@ -313,6 +314,24 @@ invoices                          payments
 
 Payments include `idempotency_key` to prevent duplicates - client sends `X-Idempotency-Key` header.
 
+## Database Migrations
+
+This project uses **Prisma Migrate** to manage schema changes. Migration files live in `server/prisma/migrations/` and are tracked in git.
+
+```bash
+cd server
+
+# Apply migrations in development (creates new migration if schema changed)
+npx prisma migrate dev
+
+# Create a migration without applying it
+npx prisma migrate dev --name <description> --create-only
+
+# Apply pending migrations in production/CI
+npx prisma migrate deploy
+```
+
+When you change `schema.prisma`, run `npx prisma migrate dev` to generate a new migration file. Commit the migration file to git so other developers can apply it.
 
 ## Testing
 
